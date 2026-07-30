@@ -4,7 +4,7 @@ from typing import Annotated, Literal, TypedDict
 import operator
 
 from langchain_core.messages import AnyMessage, SystemMessage, HumanMessage, AIMessage, ToolMessage
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 
@@ -14,13 +14,13 @@ from langgraph.prebuilt import ToolNode
 st.set_page_config(page_title="Havells Voice Intel", page_icon="🔌")
 st.title("Customer Voice Intelligence Agent")
 
-api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+api_key = st.sidebar.text_input("Groq API Key", type="password") or st.secrets.get("GROQ_API_KEY", "")
 if not api_key:
-    st.info("Please enter your OpenAI API key in the sidebar to continue.")
+    st.info("Please enter your Groq API key in the sidebar to continue.")
     st.stop()
 
 # ==========================================
-# 2. Mock Data 
+# 2. Mock Data
 # ==========================================
 @st.cache_data
 def load_data():
@@ -66,12 +66,12 @@ class AgentState(TypedDict):
 
 @st.cache_resource
 def get_compiled_graph(_api_key):
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=_api_key)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=_api_key)
     llm_with_tools = llm.bind_tools(tools)
 
     def reasoning_node(state: AgentState):
         sys_msg = SystemMessage(content="""You are an analytical assistant for product managers.
-        Answer questions based ONLY on the data provided by your tools. 
+        Answer questions based ONLY on the data provided by your tools.
         If the data doesn't back up a theme or a number, state that clearly rather than inventing one.""")
         messages = [sys_msg] + state["messages"]
         response = llm_with_tools.invoke(messages)
@@ -91,7 +91,7 @@ def get_compiled_graph(_api_key):
     workflow.add_edge(START, "reasoning")
     workflow.add_conditional_edges("reasoning", route, {"action": "action", "end": END})
     workflow.add_edge("action", "reasoning")
-    
+
     return workflow.compile()
 
 app = get_compiled_graph(api_key)
@@ -118,17 +118,17 @@ if prompt := st.chat_input("Ask about product reviews..."):
     # Add user message to chat history and display it
     user_msg = HumanMessage(content=prompt)
     st.session_state.messages.append(user_msg)
-    
+
     with st.chat_message("user"):
         st.markdown(prompt)
 
     # Stream the response from the agent
     with st.chat_message("assistant"):
         st_placeholder = st.empty()
-        
+
         # We pass the entire conversation history into the graph state
         inputs = {"messages": st.session_state.messages}
-        
+
         with st.spinner("Analyzing reviews..."):
             final_response_content = ""
             # Run the graph and update session state with the new messages
@@ -136,7 +136,7 @@ if prompt := st.chat_input("Ask about product reviews..."):
                 for key, value in output.items():
                     # Append the generated messages to our session state to keep history intact
                     st.session_state.messages.extend(value["messages"])
-                    
+
                     if key == "reasoning":
                         msg = value["messages"][0]
                         if not msg.tool_calls:
